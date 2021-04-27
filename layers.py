@@ -2,6 +2,7 @@ import paddle
 import paddle.nn as nn
 from paddle.nn import Linear
 import paddle.nn.functional as F
+import numpy as np
 
 
 class AutoEncoderHandwritten(nn.Layer):
@@ -136,3 +137,24 @@ class AutoEncoderHandwritten(nn.Layer):
         x_4_bar = self.x_4_bar_layer(dec4_h3)
         dec = [x_0_bar, x_1_bar, x_2_bar, x_3_bar, x_4_bar]
         return z, dec
+
+
+def multiple_kernel_learning(k_views, cluster, epochs=5, r=0.5):
+    beta = paddle.to_tensor([1.0 / len(k_views)] * len(k_views), dtype='float64')
+    beta_with_r = paddle.pow(beta, r)
+    q_paddle = paddle.to_tensor([], dtype='float64')
+    for epoch in range(epochs):
+        kernel = paddle.sum(beta_with_r * k_views, 0)
+        # update Q
+        values, vectors = np.linalg.eigh(kernel.numpy())
+        q = vectors[:cluster]
+        q_paddle = paddle.to_tensor(q, dtype='float64')
+        # update beta
+        beta_learning = []
+        for k_view in k_views:
+            k_matrix = paddle.matmul(k_view, paddle.add(paddle.eye(len(k_views), dtype='float64'),
+                                                        -1 * paddle.matmul(q_paddle, q_paddle, transpose_y=True)))
+            beta_learning.append(paddle.rank(k_matrix).numpy().tolist())
+        beta = paddle.to_tensor(beta_learning, dtype='float64')
+        beta_with_r = paddle.pow(beta, r)
+    return q_paddle
